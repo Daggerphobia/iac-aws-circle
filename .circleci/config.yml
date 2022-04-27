@@ -1,0 +1,138 @@
+version: 2
+
+
+jobs:
+  init-plan:
+    working_directory: /tmp/project
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - checkout
+      - run:
+          name: terraform init & plan
+          command: |
+            cd scaffolding
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+            terraform init -backend-config="bucket=teststateiac" -backend-config="key=Layer/scaffolding.state"
+            terraform plan -var-file ./test.tfvars
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  apply:
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: terraform
+          command: |
+            cd scaffolding
+            terraform apply -var-file ./test.tfvars -auto-approve
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  destroy:
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: terraform destroy
+          command: |
+            terraform destroy -var-file ./scaffolding/test.tfvars -auto-approve
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  app-init-plan:
+    working_directory: /tmp/project
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - checkout
+      - run:
+          name: terraform init & plan
+          command: |
+            cd app-level
+            ls -lrt
+            terraform init -backend-config="bucket=teststateiac" -backend-config="key=Layer/app.state"
+            terraform plan -var-file ./test.tfvars
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  app-apply:
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: terraform
+          command: |
+            terraform apply -var-file ./app-level/test.tfvars -auto-approve
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+  app-destroy:
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:0.14.0
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: terraform destroy
+          command: |
+            terraform destroy -var-file ./app-level/test.tfvars -auto-approve
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+workflows:
+  version: 2
+  plan_approve_apply:
+    jobs:
+      - init-plan
+      - hold-apply:
+          type: approval
+          requires:
+            - init-plan
+      - apply:
+          requires:
+            - hold-apply
+      - app-init-plan:
+          requires:
+            - apply
+      - app-hold-apply:
+          type: approval
+          requires:
+            - app-init-plan
+      - app-apply:
+          requires:
+            - app-hold-apply
+      - hold-destroy:
+          type: approval
+          requires:
+            - apply
+      - destroy:
+          requires:
+            - hold-destroy
+      - app-hold-destroy:
+          type: approval
+          requires:
+            - app-apply
+      - app-destroy:
+          requires:
+            - app-hold-destroy

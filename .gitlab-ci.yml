@@ -1,0 +1,104 @@
+image: 
+  name: hashicorp/terraform:0.14.0
+  entrypoint:
+      - '/usr/bin/env'
+      - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+variables:
+  STATE_BUCKET: "$bucket"
+
+
+stages:
+  - scaffolding-validate
+  - scaffolding-plan
+  - scaffolding-apply
+  - app-validate
+  - app-plan
+  - app-apply
+  - scaffolding-destroy
+  - app-destroy
+
+
+.aws_runners: &aws_runners
+  tags:
+    - autoscaling-manager-runner-amd64
+    - aws
+    - docker
+
+before_script:
+  - apk add curl
+  - apk add jq
+  - *get_aws_credentials_playground
+
+scaffolding-validate:
+  stage: scaffolding-validate
+  <<: *aws_runners
+  script:
+    - cd scaffolding
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/scaffolding.state"
+    - terraform validate
+
+scaffolding-plan:
+  stage: scaffolding-plan
+  <<: *aws_runners
+  script:
+    - cd scaffolding
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/scaffolding.state"
+    - terraform plan -var-file ./test.tfvars
+
+
+scaffolding-apply:
+  stage: scaffolding-apply
+  when: manual
+  <<: *aws_runners
+  script:
+    - cd scaffolding
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/scaffolding.state"
+    - terraform apply -var-file ./test.tfvars -auto-approve
+
+
+scaffolding-destroy:
+  stage: scaffolding-destroy
+  when: manual
+  <<: *aws_runners
+  script:
+    - cd scaffolding
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/scaffolding.state"
+    - terraform destroy -var-file ./test.tfvars -auto-approve
+
+
+app-validate:
+  stage: app-validate
+  <<: *aws_runners
+  script:
+    - cd app-level
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/app.state"
+    - terraform validate
+
+app-plan:
+  stage: app-plan
+  <<: *aws_runners
+  script:
+    - cd app-level
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/app.state"
+    - terraform plan -var-file ./test.tfvars
+
+
+app-apply:
+  stage: app-apply
+  when: manual
+  <<: *aws_runners
+  script:
+    - cd app-level
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/app.state"
+    - terraform apply -var-file ./test.tfvars -auto-approve
+
+
+app-destroy:
+  stage: app-destroy
+  when: manual
+  <<: *aws_runners
+  script:
+    - cd app-level
+    - terraform init -backend-config="bucket=$bucket" -backend-config="key=Layer/app.state"
+    - terraform destroy -var-file ./test.tfvars -auto-approve
